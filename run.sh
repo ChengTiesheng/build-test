@@ -42,10 +42,10 @@ do
         # Systemd and OpenRC (and possibly others) both create such a
         # cgroup. To avoid the aforementioned bug, we symlink "foo" to
         # "name=foo". This shouldn't have any adverse effect.
-        echo $SUBSYS | grep -q ^name= && {
-                NAME=$(echo $SUBSYS | sed s/^name=//)
-                ln -s $SUBSYS $CGROUP/$NAME
-        }
+        #echo $SUBSYS | grep -q ^name= && {
+        #        NAME=$(echo $SUBSYS | sed s/^name=//)
+        #        ln -s $SUBSYS $CGROUP/$NAME
+        #}
 
         # Likewise, on at least one system, it has been reported that
         # systemd would mount the CPU and CPU accounting controllers
@@ -89,6 +89,8 @@ run_docker() {
 	print_msg "=> Starting docker"
 	docker daemon \
 		--host=unix:///var/run/docker.sock \
+		--host=tcp://0.0.0.0:2375 \
+		--storage-driver=vfs \
 		$DOCKER_DAEMON_ARGS > /var/log/docker.log 2>&1 &
 	print_msg "=> Checking docker daemon"
 	LOOP_LIMIT=60

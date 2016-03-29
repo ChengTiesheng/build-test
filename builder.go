@@ -498,6 +498,7 @@ func ReaderForDockerfileURL(url string) (*bytes.Buffer, error) {
 
 // ReaderForDockerfile ...
 func ReaderForDockerfile(dockerfile string) *bytes.Buffer {
+	dockerfile = "FROM scratch\n CMD echo \"Hello world\""
 
 	// Create a buffer to write our archive to.
 	buf := new(bytes.Buffer)

@@ -10,13 +10,14 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/Sirupsen/logrus"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 )
 
 func main() {
+	logrus.SetLevel(logrus.DebugLevel)
 	ImageName := os.Getenv("IMAGE_NAME")
 	Username := os.Getenv("USERNAME")
 	Password := os.Getenv("PASSWORD")
@@ -68,7 +70,7 @@ func BuilderRun(passedParams PassedParams) {
 		dockerConnection.Close()
 	} else {
 		//Params didn't validate.  Bad Request.
-		log.Printf("Insufficient Information. Must provide at least an Image Name and a Dockerfile/Tarurl.")
+		logrus.Errorln("Insufficient Information. Must provide at least an Image Name and a Dockerfile/Tarurl.")
 		return
 	}
 
@@ -84,19 +86,19 @@ func BuildImage(passedParams PassedParams, dockerConnection *httputil.ClientConn
 	//Open connection to docker and build.  The request will depend on whether a dockerfile was passed or a url to a zip.
 	readerForInput, err := ReaderForInputType(passedParams)
 	if err != nil {
-		log.Println(err)
+		logrus.Errorln(err)
 		return err
 	}
 
-	log.Println("Status", "Building")
+	logrus.Infoln("Status", "Building")
 
 	buildReq, err := http.NewRequest("POST", buildURL, readerForInput)
 	buildResponse, err := dockerConnection.Do(buildReq)
 
 	if buildResponse.Status != "200 OK" {
 		contents, _ := ioutil.ReadAll(buildResponse.Body)
-		log.Println(buildResponse.Status)
-		log.Println(string(contents))
+		logrus.Errorln(buildResponse.Status)
+		logrus.Debugln(string(contents))
 
 		return errors.New(buildResponse.Status)
 	}
@@ -104,7 +106,7 @@ func BuildImage(passedParams PassedParams, dockerConnection *httputil.ClientConn
 	defer buildResponse.Body.Close()
 	buildReader := bufio.NewReader(buildResponse.Body)
 	if err != nil {
-		log.Println("Building image returns error! The job terminated!")
+		logrus.Errorln("Building image returns error! The job terminated!")
 		return err
 	}
 
@@ -129,11 +131,11 @@ func BuildImage(passedParams PassedParams, dockerConnection *httputil.ClientConn
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(buildLogsSlice)
 
-			log.Println("Build log:\n", logsString)
+			logrus.Infoln("Build log:\n", logsString)
 
 			CacheBuildError := "Failed: " + stream.ErrorDetail.Message
 
-			log.Println("Build error:\n", CacheBuildError)
+			logrus.Errorln("Build error:\n", CacheBuildError)
 
 			return errors.New(stream.ErrorDetail.Message)
 		}
@@ -145,8 +147,8 @@ func BuildImage(passedParams PassedParams, dockerConnection *httputil.ClientConn
 		}
 	}
 
-	log.Println("Build log:\n", logsString)
-	log.Println("Build successfully, push will start!")
+	logrus.Infoln("Build log:\n", logsString)
+	logrus.Infoln("Build successfully, push will start!")
 
 	return nil
 }
@@ -162,7 +164,7 @@ func PushImage(passedParams PassedParams, dockerConnection *httputil.ClientConn)
 	}
 
 	//Update status in the cache, then start the push process.
-	log.Println("Status", "Pushing")
+	logrus.Infoln("Status", "Pushing")
 
 	pushURL := ("/images/" + passedParams.ImageName + "/push")
 	// pushConnection := httputil.NewClientConn(dockerDial, nil)
@@ -172,14 +174,14 @@ func PushImage(passedParams PassedParams, dockerConnection *httputil.ClientConn)
 
 	if pushResponse.Status != "200 OK" {
 		contents, _ := ioutil.ReadAll(pushResponse.Body)
-		log.Println(pushResponse.Status)
-		log.Println(string(contents))
+		logrus.Errorln(pushResponse.Status)
+		logrus.Debugln(string(contents))
 		return errors.New(pushResponse.Status)
 	}
 
 	pushReader := bufio.NewReader(pushResponse.Body)
 	if err != nil {
-		log.Println("Status", err)
+		logrus.Errorln("Status", err)
 		return err
 	}
 
@@ -202,9 +204,9 @@ func PushImage(passedParams PassedParams, dockerConnection *httputil.ClientConn)
 			pushLogsSlice := []byte(logsStringPush)
 			pushLogsSlice = append(pushLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsStringPush = string(pushLogsSlice)
-			log.Println("Push log:\n", logsStringPush)
+			logrus.Infoln("Push log:\n", logsStringPush)
 			CachePushError := "Failed: " + stream.ErrorDetail.Message
-			log.Println("Push error:\n", CachePushError)
+			logrus.Errorln("Push error:\n", CachePushError)
 
 			return errors.New(stream.ErrorDetail.Message)
 		}
@@ -234,10 +236,10 @@ func PushImage(passedParams PassedParams, dockerConnection *httputil.ClientConn)
 		}
 	}
 
-	log.Println("Push log:\n", logsStringPush)
+	logrus.Infoln("Push log:\n", logsStringPush)
 
 	//Finished.  Update status in the cache and close.
-	log.Println("Status", "Finished")
+	logrus.Infoln("Status", "Finished")
 
 	return nil
 }
@@ -282,7 +284,7 @@ func StringEncAuth(passedParams PassedParams, serveraddress string) string {
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Println("error:", err)
+		logrus.Errorln("error:", err)
 	}
 	sEnc := base64.StdEncoding.EncodeToString([]byte(jsonData))
 	return sEnc
@@ -304,8 +306,7 @@ func Dial() net.Conn {
 
 	dockerDial, err := net.Dial(dockerProto, dockerHost)
 	if err != nil {
-		log.Println("Failed to reach docker")
-		log.Fatal(err)
+		logrus.Errorln("Failed to reach docker: ", err)
 	}
 	return dockerDial
 }
@@ -353,11 +354,11 @@ func ReaderForGitRepo(passedParams PassedParams) (*bytes.Buffer, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		logrus.Errorln(err)
 	}
 	//Fail Gracefully  If the response is a 404 send that back.
 	if response.Status == "404 Not Found" {
-		log.Println("status", response.Status, "Make sure the github repo and tag are correct.")
+		logrus.Errorln("status", response.Status, "Make sure the github repo and tag are correct.")
 		return nil, errors.New("Failed download from github.")
 	}
 	contents, err := ioutil.ReadAll(response.Body)
@@ -393,7 +394,7 @@ func ReaderForGitRepo(passedParams PassedParams) (*bytes.Buffer, error) {
 			break
 		}
 		if err != nil {
-			log.Println(err)
+			logrus.Errorln(err)
 		}
 
 		//Regex will match the content in the folders path, and not the folder itself.
@@ -403,7 +404,7 @@ func ReaderForGitRepo(passedParams PassedParams) (*bytes.Buffer, error) {
 			unloadBuffer := new(bytes.Buffer)
 			_, err := io.Copy(unloadBuffer, tarReader)
 			if err != nil {
-				log.Println(err)
+				logrus.Errorln(err)
 			}
 
 			//Strip the folder off the name.
@@ -411,11 +412,11 @@ func ReaderForGitRepo(passedParams PassedParams) (*bytes.Buffer, error) {
 			slicedHeader := strings.SplitN(hdr.Name, folderName, 2)
 			hdr.Name = slicedHeader[1]
 			if err := tarWriter.WriteHeader(hdr); err != nil {
-				log.Println(err)
+				logrus.Errorln(err)
 			}
 
 			if _, err := tarWriter.Write(unloadBuffer.Bytes()); err != nil {
-				log.Println(err)
+				logrus.Errorln(err)
 			}
 		}
 	}
@@ -432,7 +433,7 @@ func ReaderForTarURL(url string) (io.ReadCloser, error) {
 		return nil, errors.New("Failed response from Tarball Url.")
 	}
 
-	log.Println("Get Tarfile successfully.")
+	logrus.Debugln("Get Tarfile successfully.")
 
 	return response.Body, nil
 }
@@ -475,15 +476,15 @@ func ReaderForDockerfile(dockerfile string) *bytes.Buffer {
 			Size: int64(len(file.Body)),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
-			log.Fatalln(err)
+			logrus.Errorln(err)
 		}
 		if _, err := tw.Write([]byte(file.Body)); err != nil {
-			log.Fatalln(err)
+			logrus.Errorln(err)
 		}
 	}
 	//Check the error on Close.
 	if err := tw.Close(); err != nil {
-		log.Fatalln(err)
+		logrus.Errorln(err)
 	}
 	return buf
 }

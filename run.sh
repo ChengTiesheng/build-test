@@ -84,6 +84,7 @@ print_msg() {
 	echo -e "\e[1m${1}\e[0m"
 }
 
+# run_docker
 run_docker() {
 	print_msg "=> Starting docker"
 	docker daemon \

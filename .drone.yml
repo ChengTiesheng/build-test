@@ -2,5 +2,6 @@ build:
   image: golang
   commands:
     - go get
+    - go vet
     - go build
     - go test
